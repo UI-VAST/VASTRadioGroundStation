@@ -54,21 +54,16 @@ void rfd_PacketReceived(const uint8_t* buffer, size_t size)
   uint32_t crc1 = CRC::Calculate(&buffer[0], sizeof(myPacket), CRC::CRC_32());
   uint32_t crc2;
   memcpy(&crc2, &buffer[sizeof(myPacket)], sizeof(crc1));
-  for(int i = 0; i < size; i++){
-    Serial.print(i);
-    Serial.print(" ");
-    Serial.println(buffer[i]);
-  }
-  /*
+  
   if(crc1 == crc2){
-    memcpy(&myPacket, &buffer, sizeof(myPacket));
-    Serial.println("good packet");
+    memcpy(&myPacket, buffer, sizeof(myPacket));
+      Serial.println(myPacket.packetcount);
   }
   else{
     myPacket.rfd_bad_packet++;
     Serial.println("bad packet");
   }
-  */
+  
 }
 
 void lora_PacketReceived(const uint8_t* buffer, size_t size)
@@ -95,7 +90,7 @@ void Send_packet(){
 
 void setup() {
   rfd.begin(57600, SERIAL_8N1, 17, 16);
-  lora.begin(9600, SERIAL_8N1, 18, 19);
+  lora.begin(57600, SERIAL_8N1, 18, 19);
   Serial.begin(115200);
   rfd_PacketSerial.setStream(&rfd);
   rfd_PacketSerial.setPacketHandler(&rfd_PacketReceived);
