@@ -2,6 +2,9 @@
 #include <HardwareSerial.h>
 #include <PacketSerial.h>
 #include "CRC.h"
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 
 #define CutDownNichromeTime 5000 //milli sec
 #define CutDownPin 34
@@ -9,11 +12,50 @@
 bool nichromeON = false;
 unsigned long CutDownStart = 0;
 
+static const uint8_t image_data_VAST_WLOGO_BLACK[384] = {
+    0xfc, 0x00, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0xfe, 0x00, 0x00, 0x03, 0xff, 0x0f, 0xe0, 0xff, 0xff, 0xff, 0xff, 0xfc, 
+    0xfe, 0x00, 0x00, 0x07, 0xfc, 0x1f, 0xe0, 0xff, 0xff, 0xff, 0xff, 0xfc, 
+    0xfe, 0x00, 0x00, 0x0f, 0xf8, 0x3f, 0xf1, 0xff, 0xff, 0xff, 0xff, 0xfc, 
+    0xfe, 0x00, 0x00, 0x1f, 0xf0, 0x7f, 0xf1, 0xff, 0xff, 0xff, 0xff, 0xfc, 
+    0xfe, 0x00, 0x00, 0x3f, 0xe0, 0xff, 0xf1, 0xff, 0xff, 0xff, 0xff, 0xfc, 
+    0xfe, 0x00, 0x00, 0x7f, 0xc1, 0xff, 0xf1, 0xff, 0xff, 0xff, 0xff, 0xfc, 
+    0xfe, 0x00, 0x00, 0xff, 0x83, 0xff, 0xf1, 0xfc, 0x00, 0x0f, 0xe0, 0x00, 
+    0xfe, 0x00, 0x01, 0xff, 0x07, 0xff, 0xf1, 0xfc, 0x00, 0x0f, 0xe0, 0x00, 
+    0xfe, 0x00, 0x03, 0xfe, 0x0f, 0xff, 0xf1, 0xfc, 0x00, 0x0f, 0xe0, 0x00, 
+    0xfe, 0x00, 0x07, 0xfc, 0x1f, 0xf7, 0xf1, 0xfc, 0x00, 0x0f, 0xe0, 0x00, 
+    0xfe, 0x00, 0x0f, 0xf8, 0x3f, 0xe7, 0xf1, 0xfc, 0x00, 0x0f, 0xe0, 0x00, 
+    0xfe, 0x00, 0x1f, 0xf0, 0x7f, 0xc7, 0xf1, 0xfc, 0x00, 0x0f, 0xe0, 0x00, 
+    0xfe, 0x00, 0x3f, 0xe0, 0xff, 0x87, 0xf1, 0xff, 0xfc, 0x0f, 0xe0, 0x00, 
+    0xfe, 0x00, 0x7f, 0xc1, 0xff, 0x07, 0xf1, 0xff, 0xfe, 0x0f, 0xe0, 0x00, 
+    0xfe, 0x00, 0xff, 0x83, 0xfe, 0x07, 0xf1, 0xff, 0xfe, 0x0f, 0xe0, 0x00, 
+    0xfe, 0x01, 0xff, 0x07, 0xfc, 0x07, 0xf0, 0xff, 0xfe, 0x0f, 0xe0, 0x00, 
+    0xfe, 0x03, 0xfe, 0x0f, 0xf8, 0x07, 0xf0, 0xff, 0xfe, 0x0f, 0xe0, 0x00, 
+    0xfe, 0x07, 0xfc, 0x1f, 0xf0, 0x07, 0xf0, 0x7f, 0xfe, 0x0f, 0xe0, 0x00, 
+    0xfe, 0x0f, 0xf8, 0x3f, 0xe0, 0x07, 0xf0, 0x00, 0xfe, 0x0f, 0xe0, 0x00, 
+    0xfe, 0x1f, 0xf0, 0x7f, 0xc0, 0x07, 0xf0, 0x00, 0x7e, 0x0f, 0xe0, 0x00, 
+    0xfe, 0x3f, 0xe0, 0xff, 0x80, 0x07, 0xf0, 0x00, 0x7e, 0x0f, 0xe0, 0x00, 
+    0xfe, 0x7f, 0xc1, 0xff, 0x00, 0x07, 0xf0, 0x00, 0x7e, 0x0f, 0xe0, 0x00, 
+    0xfe, 0xff, 0x83, 0xfe, 0x00, 0x07, 0xf0, 0x00, 0x7e, 0x0f, 0xe0, 0x00, 
+    0xff, 0xff, 0x07, 0xfc, 0x00, 0x07, 0xf0, 0x00, 0x7e, 0x0f, 0xe0, 0x00, 
+    0xff, 0xfe, 0x0f, 0xf8, 0x00, 0x07, 0xf0, 0x00, 0xfe, 0x0f, 0xe0, 0x00, 
+    0xff, 0xfc, 0x1f, 0xf0, 0x00, 0x07, 0xff, 0xff, 0xfe, 0x0f, 0xe0, 0x00, 
+    0xff, 0xf8, 0x3f, 0xe0, 0x00, 0x07, 0xff, 0xff, 0xfe, 0x0f, 0xe0, 0x00, 
+    0xff, 0xf0, 0x7f, 0xc0, 0x00, 0x07, 0xff, 0xff, 0xfe, 0x0f, 0xe0, 0x00, 
+    0xff, 0xe0, 0xff, 0x80, 0x00, 0x07, 0xff, 0xff, 0xfe, 0x0f, 0xe0, 0x00, 
+    0x7f, 0x81, 0xff, 0x00, 0x00, 0x07, 0xff, 0xff, 0xfe, 0x0f, 0xe0, 0x00, 
+    0x7f, 0x03, 0xfe, 0x00, 0x00, 0x07, 0xff, 0xff, 0xfc, 0x0f, 0xe0, 0x00
+};
+
+//oled setup
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 64 // OLED display height, in pixels
+#define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
+#define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
+Adafruit_SSD1306 oled(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
 static const uint32_t GPSBaud = 9600;
 PacketSerial rfd_PacketSerial;
-PacketSerial lora_PacketSerial;
-HardwareSerial lora(2);
 HardwareSerial rfd(1);
 
 unsigned long MillisCount1 = 0;
@@ -47,6 +89,150 @@ recieved_data rx_data;
 
 
 
+class button{
+  private:
+    int gpio;
+    bool state;
+    int count;
+    bool invert = false;
+  public:
+    button(int _gpio){
+      gpio = _gpio;
+    }
+    button(int _gpio, bool _invert){
+      gpio = _gpio;
+      invert = _invert;
+    }
+    void update(){
+      if(invert){
+        if(digitalRead(gpio) == 0 && state == false){
+          state = true;
+          count++;
+        }
+        if(digitalRead(gpio) == 1 && state == 1){
+          state = false;
+        }
+      }
+      else{
+        if(digitalRead(gpio) == 1 && state == false){
+          state = true;
+          count++;
+        }
+        if(digitalRead(gpio) == 0 && state == 1){
+          state = false;
+        }
+      }
+    }
+    bool isPressed(){
+      return state;
+    }
+    int getCount(){
+      return count;
+    }
+    void CountReset(){
+      count = 0;
+    }
+    
+    
+};
+
+button btn1(36);
+button btn2(39);
+button btn3(34);
+button btn4(35);
+button btn5(25, true);
+
+void updateButton(){ 
+  btn1.update();
+  btn2.update();
+  btn3.update();
+  btn4.update();
+  btn5.update();
+}
+
+
+int cursor = 0;
+bool is_selected = false;
+void CursorControll(){
+  if(btn5.getCount() > 0){
+    btn5.CountReset();
+    is_selected = !is_selected;
+    oled.clearDisplay();
+    oled.setCursor(0,cursor*8);
+    if(is_selected){
+      oled.print('<');
+    }
+    else{
+      oled.print('>');
+    }
+    oled.display();
+  }
+  if(btn2.getCount() > 0){
+    btn2.CountReset();
+    cursor++;
+    if(cursor > 7){
+      cursor = 7;
+    }
+    oled.clearDisplay();
+    oled.setCursor(0,cursor*8);
+    if(is_selected){
+      oled.print('<');
+    }
+    else{
+      oled.print('>');
+    }
+    oled.display();
+  }
+  if(btn4.getCount() > 0){
+    btn4.CountReset();
+    cursor--;
+    if(cursor < 0){
+      cursor = 0;
+    }
+    oled.clearDisplay();
+    oled.setCursor(0,cursor*8);
+    if(is_selected){
+      oled.print('<');
+    }
+    else{
+      oled.print('>');
+    }
+    oled.display();
+  }
+
+  
+}
+void display(){
+  oled.clearDisplay();
+  oled.setCursor(0,0);
+  oled.print("Packet:");
+  oled.print(myPacket.packetcount);
+  oled.print(":");
+  //oled.print();
+  oled.print(":");
+  //oled.println();
+  oled.print("lat:");
+  oled.println(myPacket.lat ,10);
+  oled.print("lng:");
+  oled.println(myPacket.lng ,10);
+  oled.print("Alt:");
+  oled.println(myPacket.alt);
+  oled.print("Bat V:");
+  //oled.println();
+  oled.print("Temp: ");
+  //oled.println();
+  oled.setCursor(0,56);
+  oled.print("1");
+  oled.display();
+}
+
+
+
+
+
+
+
+
 
 
 void rfd_PacketReceived(const uint8_t* buffer, size_t size)
@@ -66,18 +252,6 @@ void rfd_PacketReceived(const uint8_t* buffer, size_t size)
   
 }
 
-void lora_PacketReceived(const uint8_t* buffer, size_t size)
-{
-  uint32_t crc1 = CRC::Calculate(buffer, size, CRC::CRC_32());
-  uint32_t crc2;
-  memcpy(&crc2, &buffer[sizeof(myPacket)], sizeof(crc2));
-  if(crc1 == crc2){
-    memcpy(&myPacket, &buffer, sizeof(myPacket)); 
-  }
-  else{
-    myPacket.lora_bad_packet++;
-  }
-}
 
 void Send_packet(){
     uint32_t crc = CRC::Calculate(&rx_data, sizeof(rx_data), CRC::CRC_32());
@@ -85,28 +259,46 @@ void Send_packet(){
     memcpy(&payload[0], &rx_data, sizeof(rx_data));
     memcpy(&payload[sizeof(rx_data)], &crc, sizeof(crc));
     rfd_PacketSerial.send(payload, sizeof(payload));
-    lora_PacketSerial.send(payload, sizeof(payload));
 }
 
 void setup() {
-  rfd.begin(57600, SERIAL_8N1, 17, 16);
-  lora.begin(57600, SERIAL_8N1, 18, 19);
+  rfd.begin(57600, SERIAL_8N1, 16, 17);
+
   Serial.begin(115200);
   rfd_PacketSerial.setStream(&rfd);
   rfd_PacketSerial.setPacketHandler(&rfd_PacketReceived);
-  lora_PacketSerial.setStream(&lora);
-  lora_PacketSerial.setPacketHandler(&lora_PacketReceived);
 
   myPacket.cutdown_status = false;
   myPacket.cutdown_time = 3600;
   myPacket.parachute_status = false;
 
+
+  pinMode(GPIO_NUM_36, INPUT);
+  pinMode(GPIO_NUM_39, INPUT);
+  pinMode(GPIO_NUM_34, INPUT);
+  pinMode(GPIO_NUM_35, INPUT);
+
+  pinMode(GPIO_NUM_32, INPUT);
+  pinMode(GPIO_NUM_33, INPUT);
+  pinMode(GPIO_NUM_25, INPUT_PULLUP);
+
+
+  oled.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  oled.clearDisplay();
+  oled.setTextSize(1);
+  oled.setTextColor(WHITE);
+  oled.drawBitmap(17, 16, image_data_VAST_WLOGO_BLACK, 94, 32, WHITE);
+  oled.display();
+
+  
 }
 
 void loop() {
   rfd_PacketSerial.update();
-  lora_PacketSerial.update();
 
+  CursorControll();
+
+  updateButton();
   //run at 10hz
   unsigned long currentMillis = millis();
   if(currentMillis - MillisCount1 >= 100){
