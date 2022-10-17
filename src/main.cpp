@@ -150,84 +150,176 @@ void updateButton(){
   btn5.update();
 }
 
+class menu{
+  private:
+    int cursor = 0;
+    bool is_selected = false;
+    int page = 0;
+    int selectCount = 0;
+  public:
 
-int cursor = 0;
-bool is_selected = false;
-void CursorControll(){
-  if(btn5.getCount() > 0){
-    btn5.CountReset();
-    is_selected = !is_selected;
-    oled.clearDisplay();
-    oled.setCursor(0,cursor*8);
-    if(is_selected){
-      oled.print('<');
+    
+    void DisplayCursor(){
+        oled.setCursor(0,cursor*8);
+        if(is_selected){
+          oled.print('<');
+        }
+        else{
+          oled.print('>');
+        }
     }
-    else{
-      oled.print('>');
-    }
-    oled.display();
-  }
-  if(btn2.getCount() > 0){
-    btn2.CountReset();
-    cursor++;
-    if(cursor > 7){
-      cursor = 7;
-    }
-    oled.clearDisplay();
-    oled.setCursor(0,cursor*8);
-    if(is_selected){
-      oled.print('<');
-    }
-    else{
-      oled.print('>');
-    }
-    oled.display();
-  }
-  if(btn4.getCount() > 0){
-    btn4.CountReset();
-    cursor--;
-    if(cursor < 0){
-      cursor = 0;
-    }
-    oled.clearDisplay();
-    oled.setCursor(0,cursor*8);
-    if(is_selected){
-      oled.print('<');
-    }
-    else{
-      oled.print('>');
-    }
-    oled.display();
-  }
 
-  
-}
-void display(){
-  oled.clearDisplay();
-  oled.setCursor(0,0);
-  oled.print("Packet:");
-  oled.print(myPacket.packetcount);
-  oled.print(":");
-  //oled.print();
-  oled.print(":");
-  //oled.println();
-  oled.print("lat:");
-  oled.println(myPacket.lat ,10);
-  oled.print("lng:");
-  oled.println(myPacket.lng ,10);
-  oled.print("Alt:");
-  oled.println(myPacket.alt);
-  oled.print("Bat V:");
-  //oled.println();
-  oled.print("Temp: ");
-  //oled.println();
-  oled.setCursor(0,56);
-  oled.print("1");
-  oled.display();
-}
+    void updateCursor(){
+      if(!is_selected){
+        selectCount = 0;
+        if(btn2.getCount() > 0){
+          btn2.CountReset();
+          cursor++;
+          if(cursor > 7){
+            cursor = 7;
+          }
+          updateDisplay();
+        }
+        if(btn4.getCount() > 0){
+          btn4.CountReset();
+          cursor--;
+          if(cursor < 0){
+            cursor = 0;
+          }
+          updateDisplay();
+        }
+      }
+      
+    }
 
+    void updateSelect(){
+      if(btn5.getCount() > 0){
+        btn5.CountReset();
+        is_selected = !is_selected;
+        updateDisplay();
+      }
+      if(is_selected){
+        if(btn2.getCount() > 0){
+        btn2.CountReset();
+        selectCount--;
+        updateDisplay();
+      }
+      if(btn4.getCount() > 0){
+        btn4.CountReset();
+        selectCount++;
+        updateDisplay();
+      }
+      }
+    }
+    
+    void menu0(){
+      oled.drawBitmap(17, 16, image_data_VAST_WLOGO_BLACK, 94, 32, WHITE);
+    }
 
+    void menu1(){
+      oled.print("Packet:");
+      oled.print(myPacket.packetcount);
+      oled.print(":");
+      //oled.print();
+      oled.print(":");
+      //oled.println();
+      oled.print("lat:");
+      oled.println(myPacket.lat ,10);
+      oled.print("lng:");
+      oled.println(myPacket.lng ,10);
+      oled.print("Alt:");
+      oled.println(myPacket.alt);
+      oled.print("Bat V:");
+      //oled.println();
+      oled.print("Temp: ");
+      //oled.println();
+      oled.setCursor(0,56);
+      oled.print("1");
+    }
 
+    void menu2(){
+
+      if(is_selected){
+        switch (cursor)
+        {
+        case 0:
+          myPacket.cutdown_time += selectCount;
+          
+          break;
+        case 1:
+          myPacket.cutdown_status = !myPacket.cutdown_status;
+        default:
+          break;
+        }
+      }
+      oled.setCursor(8,0);
+      oled.print("Cutdown Time:");
+      oled.setCursor(11*8,0);
+      oled.print(myPacket.cutdown_time);
+      oled.setCursor(8,8);
+      oled.print("Timer Running:");
+      oled.setCursor(11*8,8);
+      oled.print(myPacket.timer_running);
+      DisplayCursor();
+    }
+
+    void updateDisplay(){
+      oled.clearDisplay();
+      oled.setCursor(0,0);
+
+      switch (page)
+      {
+      case 0:
+        menu0();
+        break;
+      case 1:
+        menu1();
+        break;
+      case 2:
+        menu2();
+        break;
+
+      
+      default:
+
+        break;
+      }
+      
+
+      oled.display();
+    }
+
+    void PageControl(){
+      if(btn1.getCount() > 0){
+        btn1.CountReset();
+        page++;
+        if(page > 3){
+          page = 3;
+        }
+        selectCount = 0;
+        is_selected = false;
+        updateDisplay();
+      }
+      if(btn3.getCount() > 0){
+        btn3.CountReset();
+        page--;
+        if(page < 0){
+          page = 0;
+        }
+        selectCount = 0;
+        is_selected = false;
+        updateDisplay();
+      }
+    }
+
+    void update(){
+      updateCursor();
+      updateSelect();
+      PageControl();
+    }
+
+};
+menu MyMenu;
 
 
 
@@ -296,14 +388,16 @@ void setup() {
 void loop() {
   rfd_PacketSerial.update();
 
-  CursorControll();
+  MyMenu.update();
 
   updateButton();
+
   //run at 10hz
   unsigned long currentMillis = millis();
   if(currentMillis - MillisCount1 >= 100){
     MillisCount1 = currentMillis;
     //Send_packet();
+    
   }
 
   //run at 1hz
