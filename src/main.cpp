@@ -170,6 +170,11 @@ class menu{
     }
 
     void updateCursor(){
+      if(btn5.getCount() > 0){
+        btn5.CountReset();
+        is_selected = !is_selected;
+        updateDisplay();
+      }
       if(!is_selected){
         selectCount = 0;
         if(btn2.getCount() > 0){
@@ -193,23 +198,19 @@ class menu{
     }
 
     void updateSelect(){
-      if(btn5.getCount() > 0){
-        btn5.CountReset();
-        is_selected = !is_selected;
-        updateDisplay();
-      }
       if(is_selected){
         if(btn2.getCount() > 0){
-        btn2.CountReset();
-        selectCount--;
-        updateDisplay();
+          btn2.CountReset();
+          selectCount--;
+          updateDisplay();
+        }
+        if(btn4.getCount() > 0){
+          btn4.CountReset();
+          selectCount++;
+          updateDisplay();
+        }
       }
-      if(btn4.getCount() > 0){
-        btn4.CountReset();
-        selectCount++;
-        updateDisplay();
-      }
-      }
+      
     }
     
     void menu0(){
@@ -237,29 +238,73 @@ class menu{
       oled.print("1");
     }
 
-    void menu2(){
-
+    void menu2Control(){
       if(is_selected){
         switch (cursor)
         {
         case 0:
-          myPacket.cutdown_time += selectCount;
-          
+          if(selectCount > 0){
+            myPacket.cutdown_time = myPacket.cutdown_time + 10;
+            selectCount = 0;
+          }
+          if(selectCount < 0){
+            myPacket.cutdown_time = myPacket.cutdown_time - 10;
+            selectCount = 0;
+          }
           break;
         case 1:
-          myPacket.cutdown_status = !myPacket.cutdown_status;
+          if(selectCount > 0){
+            myPacket.timer_running = !myPacket.timer_running;
+            selectCount = 0;
+          }
+          if(selectCount < 0){
+            myPacket.timer_running = !myPacket.timer_running;
+            selectCount = 0;
+          }
+        case 2:
+          if(selectCount > 0){
+            
+            selectCount = 0;
+          }
+          if(selectCount < 0){
+            
+            selectCount = 0;
+          }
+          break;
+        case 3:
+          if(selectCount > 0){
+            myPacket.parachute_status = !myPacket.parachute_status;
+            selectCount = 0;
+          }
+          if(selectCount < 0){
+            myPacket.parachute_status = !myPacket.parachute_status;
+            selectCount = 0;
+          }
+          break;
         default:
           break;
         }
       }
+    }
+
+    void menu2(){
+      menu2Control();
+
       oled.setCursor(8,0);
       oled.print("Cutdown Time:");
-      oled.setCursor(11*8,0);
       oled.print(myPacket.cutdown_time);
+
       oled.setCursor(8,8);
       oled.print("Timer Running:");
-      oled.setCursor(11*8,8);
       oled.print(myPacket.timer_running);
+
+      oled.setCursor(8,16);
+      oled.print("Cutdown Status:");
+      oled.print(myPacket.cutdown_status);
+
+      oled.setCursor(8,24);
+      oled.print("Parachute Status:");
+      oled.print(myPacket.parachute_status);
       DisplayCursor();
     }
 
@@ -314,8 +359,9 @@ class menu{
 
     void update(){
       updateCursor();
-      updateSelect();
       PageControl();
+      updateSelect();
+      Serial.println(selectCount);
     }
 
 };
