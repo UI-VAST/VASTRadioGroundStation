@@ -77,14 +77,14 @@ typedef struct packet {
 } packet;
 packet myPacket;
 
-typedef struct recieved_data{
+typedef struct tx_data{
     int cutdown_time;
     bool update_cutdown_time;
     bool RunTimer;
     bool trigger_cutdown;
     bool trigger_parachute;   
-} recieved_data;
-recieved_data rx_data;
+} tx_data;
+tx_data myTx;
 
 
 
@@ -162,7 +162,7 @@ class menu{
     void DisplayCursor(){
         oled.setCursor(0,cursor*8);
         if(is_selected){
-          oled.print('<');
+          oled.print('*');
         }
         else{
           oled.print('>');
@@ -215,26 +215,26 @@ class menu{
     
     void menu0(){
       oled.drawBitmap(17, 16, image_data_VAST_WLOGO_BLACK, 94, 32, WHITE);
+      oled.setCursor(18,56);
+      oled.print("Ryan Stephenson");
     }
 
     void menu1(){
       oled.print("Packet:");
       oled.print(myPacket.packetcount);
       oled.print(":");
-      //oled.print();
-      oled.print(":");
-      //oled.println();
+      oled.println(myPacket.rfd_bad_packet);
       oled.print("lat:");
       oled.println(myPacket.lat ,10);
       oled.print("lng:");
       oled.println(myPacket.lng ,10);
       oled.print("Alt:");
       oled.println(myPacket.alt);
-      oled.print("Bat V:");
-      //oled.println();
-      oled.print("Temp: ");
-      //oled.println();
-      oled.setCursor(0,56);
+      oled.print("Speed:");
+      oled.println(myPacket.speed);
+      oled.print("Sats:");
+      oled.println(myPacket.sats);
+      oled.setCursor(120,56);
       oled.print("1");
     }
 
@@ -242,42 +242,52 @@ class menu{
       if(is_selected){
         switch (cursor)
         {
-        case 0:
+        case 5:
           if(selectCount > 0){
-            myPacket.cutdown_time = myPacket.cutdown_time + 10;
+            myTx.trigger_cutdown = !myTx.trigger_cutdown;
             selectCount = 0;
           }
           if(selectCount < 0){
-            myPacket.cutdown_time = myPacket.cutdown_time - 10;
+            myTx.trigger_cutdown = !myTx.trigger_cutdown;
+            selectCount = 0;
+          }
+          break;
+        case 6:
+          if(selectCount > 0){
+            myTx.trigger_parachute = !myTx.trigger_parachute;
+            selectCount = 0;
+          }
+          if(selectCount < 0){
+            myTx.trigger_parachute = !myTx.trigger_parachute;
+            selectCount = 0;
+          }
+        case 0:
+          if(selectCount > 0){
+            myTx.cutdown_time = myTx.cutdown_time + 10;
+            selectCount = 0;
+          }
+          if(selectCount < 0){
+            myTx.cutdown_time = myTx.cutdown_time - 10;
             selectCount = 0;
           }
           break;
         case 1:
           if(selectCount > 0){
-            myPacket.timer_running = !myPacket.timer_running;
+            myTx.update_cutdown_time = !myTx.update_cutdown_time;
             selectCount = 0;
           }
           if(selectCount < 0){
-            myPacket.timer_running = !myPacket.timer_running;
-            selectCount = 0;
-          }
-        case 2:
-          if(selectCount > 0){
-            
-            selectCount = 0;
-          }
-          if(selectCount < 0){
-            
+            myTx.update_cutdown_time = !myTx.update_cutdown_time;
             selectCount = 0;
           }
           break;
-        case 3:
+        case 2:
           if(selectCount > 0){
-            myPacket.parachute_status = !myPacket.parachute_status;
+            myTx.RunTimer = !myTx.RunTimer;
             selectCount = 0;
           }
           if(selectCount < 0){
-            myPacket.parachute_status = !myPacket.parachute_status;
+            myTx.RunTimer = !myTx.RunTimer;
             selectCount = 0;
           }
           break;
@@ -291,23 +301,61 @@ class menu{
       menu2Control();
 
       oled.setCursor(8,0);
-      oled.print("Cutdown Time:");
-      oled.print(myPacket.cutdown_time);
+      oled.print("Set CD Time:");
+      oled.print(myTx.cutdown_time);
 
       oled.setCursor(8,8);
-      oled.print("Timer Running:");
-      oled.print(myPacket.timer_running);
+      oled.print("Update Timer:");
+      oled.print(myTx.update_cutdown_time);
 
       oled.setCursor(8,16);
-      oled.print("Cutdown Status:");
-      oled.print(myPacket.cutdown_status);
+      if(myTx.RunTimer == true){
+        oled.print("Timer Running!");
+      }
+      else{
+        oled.print("Timmer Stoped");
+      }
 
       oled.setCursor(8,24);
-      oled.print("Parachute Status:");
-      oled.print(myPacket.parachute_status);
+      oled.print("CD Status: ");
+      if(myPacket.cutdown_status == true){
+        oled.print("Recieved!");
+      }
+      else{
+        oled.print("Waiting");
+      }
+      
+      oled.setCursor(8,32);
+      oled.print("P Status: ");
+      if(myPacket.parachute_status == true){
+        oled.print("Recieved!");
+      }
+      else{
+        oled.print("Waiting");
+      }
+
+
+      oled.setCursor(8,40);
+      oled.print("Send CD:");
+      oled.print(myTx.trigger_cutdown);
+
+      oled.setCursor(8,48);
+      oled.print("Send P:");
+      oled.print(myTx.trigger_parachute);
+
+      oled.setCursor(120,56);
+      oled.print("2");
+
       DisplayCursor();
     }
 
+    void menu3(){
+      oled.setCursor(0,0);
+      
+      oled.setCursor(120,56);
+      oled.print("3");
+    }
+    
     void updateDisplay(){
       oled.clearDisplay();
       oled.setCursor(0,0);
@@ -323,8 +371,9 @@ class menu{
       case 2:
         menu2();
         break;
-
-      
+      case 3:
+        menu3();
+        break;
       default:
 
         break;
@@ -361,13 +410,11 @@ class menu{
       updateCursor();
       PageControl();
       updateSelect();
-      Serial.println(selectCount);
+      
     }
 
 };
 menu MyMenu;
-
-
 
 
 
@@ -392,10 +439,10 @@ void rfd_PacketReceived(const uint8_t* buffer, size_t size)
 
 
 void Send_packet(){
-    uint32_t crc = CRC::Calculate(&rx_data, sizeof(rx_data), CRC::CRC_32());
-    uint8_t payload[sizeof(rx_data)+sizeof(crc)];
-    memcpy(&payload[0], &rx_data, sizeof(rx_data));
-    memcpy(&payload[sizeof(rx_data)], &crc, sizeof(crc));
+    uint32_t crc = CRC::Calculate(&myTx, sizeof(myTx), CRC::CRC_32());
+    uint8_t payload[sizeof(myTx)+sizeof(crc)];
+    memcpy(&payload[0], &myTx, sizeof(myTx));
+    memcpy(&payload[sizeof(myTx)], &crc, sizeof(crc));
     rfd_PacketSerial.send(payload, sizeof(payload));
 }
 
