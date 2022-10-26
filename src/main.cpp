@@ -5,12 +5,19 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <esp_now.h>
+#include <WiFi.h>
 
 #define CutDownNichromeTime 5000 //milli sec
 #define CutDownPin 34
 #define ParachutePin 35
 bool nichromeON = false;
 unsigned long CutDownStart = 0;
+
+//antenna tracker MAC
+//40:91:51:BF:E1:04
+//78:21:84:7C:4F:EC
+uint8_t broadcastAddress[] = {0x78, 0x21, 0x84, 0x7C, 0x4F, 0xEC};
 
 static const uint8_t image_data_VAST_WLOGO_BLACK[384] = {
     0xfc, 0x00, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
@@ -46,6 +53,8 @@ static const uint8_t image_data_VAST_WLOGO_BLACK[384] = {
     0x7f, 0x81, 0xff, 0x00, 0x00, 0x07, 0xff, 0xff, 0xfe, 0x0f, 0xe0, 0x00, 
     0x7f, 0x03, 0xfe, 0x00, 0x00, 0x07, 0xff, 0xff, 0xfc, 0x0f, 0xe0, 0x00
 };
+esp_now_peer_info_t peerInfo;
+
 
 //oled setup
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
@@ -86,7 +95,38 @@ typedef struct tx_data{
 } tx_data;
 tx_data myTx;
 
+typedef struct espdata {
+  double lat;
+  double lng;
+  float alt;
+  float speed;
+  int sats;
+  int packetcount;
+  int cutdown_time;
+  bool timer_running;
+  bool cutdown_status;
+  bool parachute_status;
+  int lora_bad_packet;
+  int rfd_bad_packet;
+  int heading;
+  int angle;
+} espdata;
+espdata espRX;
 
+typedef struct ControllerData{
+  float x;
+  float y;
+  char mode;
+  int heading_offset;
+  int angle_offset;
+
+  int cutdown_time;
+  bool update_cutdown_time;
+  bool RunTimer;
+  bool trigger_cutdown;
+  bool trigger_parachute;
+} ControllerData;
+ControllerData espTX;
 
 
 class button{
@@ -349,11 +389,88 @@ class menu{
       DisplayCursor();
     }
 
+    void menu3Control(){
+      if(is_selected){
+        switch (cursor)
+        {
+        case 0:
+          if(selectCount > 0){
+            if(espTX.mode == 'm'){
+              espTX.mode = 'a';
+            }
+            else{
+              espTX.mode = 'm';
+            }
+            selectCount = 0;
+          }
+          if(selectCount < 0){
+             if(espTX.mode == 'm'){
+              espTX.mode = 'a';
+            }
+            else{
+              espTX.mode = 'm';
+            }
+            selectCount = 0;
+          }
+          break;
+        case 2:
+          if(selectCount > 0){
+            espTX.heading_offset = espTX.heading_offset + 1;
+            selectCount = 0;
+          }
+          if(selectCount < 0){
+            espTX.heading_offset = espTX.heading_offset - 1;
+            selectCount = 0;
+          }
+          break;
+        case 4:
+          if(selectCount > 0){
+            espTX.angle_offset = espTX.angle_offset + 1;
+            selectCount = 0;
+          }
+          if(selectCount < 0){
+            espTX.angle_offset = espTX.angle_offset + 1;
+            selectCount = 0;
+          }
+          break;
+        default:
+          break;
+        }
+      }
+    }
+    
     void menu3(){
-      oled.setCursor(0,0);
-      
+      menu3Control();
+
+      oled.setCursor(8,0);
+      oled.print("Mode: ");
+      if(espTX.mode == 'm'){
+        oled.print("manual");
+      }
+      if(espTX.mode == 'a'){
+        oled.print("auto");
+      }
+
+      oled.setCursor(8,8);
+      oled.print("Heading: ");
+      oled.print(espRX.heading);
+
+      oled.setCursor(8,16);
+      oled.print("Offset: ");
+      oled.print(espTX.heading_offset);
+
+      oled.setCursor(8, 24);
+      oled.print("Elevation: ");
+      oled.print(espRX.angle);
+
+      oled.setCursor(8, 32);
+      oled.print("Offset: ");
+      oled.print(espTX.angle_offset);
+
       oled.setCursor(120,56);
       oled.print("3");
+
+      DisplayCursor();
     }
     
     void updateDisplay(){
@@ -416,9 +533,68 @@ class menu{
 };
 menu MyMenu;
 
+void espNowSend(){
+  esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &espTX, sizeof(espTX));
+  if (result == ESP_OK) {
+    //Serial.println("Sent with success");
+  }
+  else {
+    //Serial.println("Error sending the data");
+    }
+}
 
+void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
+  memcpy(&espRX, incomingData, sizeof(espRX));
+  //store data into myPacket data structure
+  myPacket.alt = espRX.alt;
+  myPacket.cutdown_status = espRX.cutdown_status;
+  myPacket.cutdown_time = espRX.cutdown_time;
+  myPacket.lat = espRX.lat;
+  myPacket.lng = espRX.lng;
+  myPacket.lora_bad_packet = espRX.lora_bad_packet;
+  myPacket.packetcount = espRX.packetcount;
+  myPacket.parachute_status = espRX.parachute_status;
+  myPacket.rfd_bad_packet = espRX.rfd_bad_packet;
+  myPacket.sats = espRX.sats;
+  myPacket.speed = espRX.speed;
+  myPacket.timer_running = espRX.timer_running;
+}
+// callback when data is sent
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+  //Serial.print("\r\nLast Packet Send Status:\t");
+  //Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
 
+}
 
+void espNowSetup(){
+  // Set device as a Wi-Fi Station
+  WiFi.setTxPower(WIFI_POWER_19_5dBm);
+  WiFi.persistent(false);
+  WiFi.mode(WIFI_MODE_STA);
+  WiFi.begin("dummy_ssid","dummy_ssid",6,NULL,false);
+  WiFi.disconnect();  
+  // Init ESP-NOW
+  if (esp_now_init() != ESP_OK) {
+    //Serial.println("Error initializing ESP-NOW");
+    return;
+  }
+
+  // Once ESPNow is successfully Init, we will register for Send CB to
+  // get the status of Trasnmitted packet
+  esp_now_register_send_cb(OnDataSent);
+  esp_now_register_recv_cb(OnDataRecv);
+
+  // Register peer
+  memcpy(peerInfo.peer_addr, broadcastAddress, 6);
+  peerInfo.channel = 1;  
+  peerInfo.encrypt = false;
+  
+  // Add peer        
+  if (esp_now_add_peer(&peerInfo) != ESP_OK){
+    //Serial.println("");
+    return;
+  }
+}
 
 void rfd_PacketReceived(const uint8_t* buffer, size_t size)
 {
@@ -437,7 +613,6 @@ void rfd_PacketReceived(const uint8_t* buffer, size_t size)
   
 }
 
-
 void Send_packet(){
     uint32_t crc = CRC::Calculate(&myTx, sizeof(myTx), CRC::CRC_32());
     uint8_t payload[sizeof(myTx)+sizeof(crc)];
@@ -447,11 +622,13 @@ void Send_packet(){
 }
 
 void setup() {
-  rfd.begin(57600, SERIAL_8N1, 16, 17);
 
+  espNowSetup();
+
+  //rfd.begin(57600, SERIAL_8N1, 16, 17);
   Serial.begin(115200);
-  rfd_PacketSerial.setStream(&rfd);
-  rfd_PacketSerial.setPacketHandler(&rfd_PacketReceived);
+  //rfd_PacketSerial.setStream(&rfd);
+  //rfd_PacketSerial.setPacketHandler(&rfd_PacketReceived);
 
   myPacket.cutdown_status = false;
   myPacket.cutdown_time = 3600;
@@ -475,11 +652,29 @@ void setup() {
   oled.drawBitmap(17, 16, image_data_VAST_WLOGO_BLACK, 94, 32, WHITE);
   oled.display();
 
-  
+  espTX.mode = 'm';
+  espTX.cutdown_time = 3600;
+  espTX.heading_offset = 12;
+  espTX.trigger_cutdown = false;
+  espTX.update_cutdown_time = false;
+  espTX.RunTimer = false;
 }
 
+void joystickControl(){
+  if(espTX.mode == 'm'){
+      //read joystick
+      int x = analogRead(33);
+      int y = analogRead(32);
+      espTX.x = map(x, 0, 4096, -1000, 1000); 
+      espTX.y = map(y, 0, 4096, -1000, 1000);
+      // Send message via ESP-NOW 
+      espNowSend();
+  }
+}
+
+
 void loop() {
-  rfd_PacketSerial.update();
+  //rfd_PacketSerial.update();
 
   MyMenu.update();
 
@@ -489,14 +684,14 @@ void loop() {
   unsigned long currentMillis = millis();
   if(currentMillis - MillisCount1 >= 100){
     MillisCount1 = currentMillis;
-    //Send_packet();
+    joystickControl();
     
   }
 
   //run at 1hz
   if(currentMillis - MillisCount2 >= 1000){
     MillisCount2 = currentMillis;
-    
+    espNowSend();
   }
     
 }
