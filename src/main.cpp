@@ -607,7 +607,8 @@ void rfd_PacketReceived(const uint8_t* buffer, size_t size)
   
   if(crc1 == crc2){
     memcpy(&myPacket, buffer, sizeof(myPacket));
-      Serial.println(myPacket.packetcount);
+    //Serial.println(myPacket.packetcount);
+    MyMenu.updateDisplay();
   }
   else{
     myPacket.rfd_bad_packet++;
@@ -640,10 +641,10 @@ void setup() {
 
   espNowSetup();
 
-  //rfd.begin(57600, SERIAL_8N1, 16, 17);
+  rfd.begin(57600, SERIAL_8N1, 16, 17);
   Serial.begin(115200);
-  //rfd_PacketSerial.setStream(&rfd);
-  //rfd_PacketSerial.setPacketHandler(&rfd_PacketReceived);
+  rfd_PacketSerial.setStream(&rfd);
+  rfd_PacketSerial.setPacketHandler(&rfd_PacketReceived);
 
   myPacket.cutdown_status = false;
   myPacket.cutdown_time = 3600;
@@ -759,16 +760,16 @@ void Send_Mavlink(){
 
 
   int16_t heading = 0;      // Geographical heading angle in degrees
-  float lat = espRX.lat;   // GPS latitude in degrees (example: 47.123456)
-  float lon = espRX.lng;   // GPS longitude in degrees
-  float alt = espRX.alt;        // Relative flight altitude in m
-  float groundspeed = espRX.speed; // Groundspeed in m/s
+  float lat = myPacket.lat;   // GPS latitude in degrees (example: 47.123456)
+  float lon = myPacket.lng;   // GPS longitude in degrees
+  float alt = myPacket.alt;        // Relative flight altitude in m
+  float groundspeed = myPacket.speed; // Groundspeed in m/s
   float airspeed = 0.0;    // Airspeed in m/s
   float climbrate = 0.0;    // Climb rate in m/s, currently not working
 
 
   // GPS parameters
-  int16_t gps_sats = espRX.sats;    // Number of visible GPS satellites
+  int16_t gps_sats = myPacket.sats;    // Number of visible GPS satellites
   int32_t gps_alt = 0.0;  // GPS altitude (Altitude above MSL)
   float gps_hdop = 100.0;     // GPS HDOP
   uint8_t fixType = 3;      // GPS fix type. 0-1: no fix, 2: 2D fix, 3: 3D fix
@@ -779,7 +780,7 @@ void Send_Mavlink(){
 }
 
 void loop() {
-  //rfd_PacketSerial.update();
+  rfd_PacketSerial.update();
 
   MyMenu.update();
 
