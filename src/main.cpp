@@ -11,10 +11,6 @@
 
 
 #define CutDownNichromeTime 5000 //milli sec
-#define CutDownPin 34
-#define ParachutePin 35
-bool nichromeON = false;
-unsigned long CutDownStart = 0;
 
 //antenna tracker MAC
 //40:91:51:BF:E1:04
@@ -71,6 +67,7 @@ HardwareSerial rfd(1);
 
 unsigned long MillisCount1 = 0;
 unsigned long MillisCount2 = 0;
+bool RfdSendPacket = false;
 
 typedef struct packet {
   double lat;
@@ -276,6 +273,8 @@ class menu{
       oled.println(myPacket.speed);
       oled.print("Sats:");
       oled.println(myPacket.sats);
+      oled.print("CD Time:");
+      oled.println(myPacket.cutdown_time);
       oled.setCursor(120,56);
       oled.print("1");
     }
@@ -287,49 +286,59 @@ class menu{
         case 5:
           if(selectCount > 0){
             myTx.trigger_cutdown = !myTx.trigger_cutdown;
+            RfdSendPacket = true;
             selectCount = 0;
           }
           if(selectCount < 0){
             myTx.trigger_cutdown = !myTx.trigger_cutdown;
+            RfdSendPacket = true;
             selectCount = 0;
           }
           break;
         case 6:
           if(selectCount > 0){
             myTx.trigger_parachute = !myTx.trigger_parachute;
+            RfdSendPacket = true;
             selectCount = 0;
           }
           if(selectCount < 0){
             myTx.trigger_parachute = !myTx.trigger_parachute;
+            RfdSendPacket = true;
             selectCount = 0;
           }
         case 0:
           if(selectCount > 0){
             myTx.cutdown_time = myTx.cutdown_time + 10;
+            RfdSendPacket = true;
             selectCount = 0;
           }
           if(selectCount < 0){
             myTx.cutdown_time = myTx.cutdown_time - 10;
+            RfdSendPacket = true;
             selectCount = 0;
           }
           break;
         case 1:
           if(selectCount > 0){
             myTx.update_cutdown_time = !myTx.update_cutdown_time;
+            RfdSendPacket = true;
             selectCount = 0;
           }
           if(selectCount < 0){
             myTx.update_cutdown_time = !myTx.update_cutdown_time;
+            RfdSendPacket = true;
             selectCount = 0;
           }
           break;
         case 2:
           if(selectCount > 0){
             myTx.RunTimer = !myTx.RunTimer;
+            RfdSendPacket = true;
             selectCount = 0;
           }
           if(selectCount < 0){
             myTx.RunTimer = !myTx.RunTimer;
+            RfdSendPacket = true;
             selectCount = 0;
           }
           break;
@@ -536,6 +545,12 @@ class menu{
 menu MyMenu;
 
 void espNowSend(){
+  espTX.cutdown_time = myTx.cutdown_time;
+  espTX.update_cutdown_time = myTx.update_cutdown_time;
+  espTX.RunTimer = myTx.RunTimer;
+  espTX.trigger_cutdown = myTx.trigger_cutdown;
+  espTX.trigger_parachute = myTx.trigger_parachute;
+
   esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &espTX, sizeof(espTX));
   if (result == ESP_OK) {
     //Serial.println("Sent with success");
@@ -562,7 +577,7 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
   myPacket.timer_running = espRX.timer_running;
   MyMenu.updateDisplay();
 }
-// callback when data is sent
+
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
   //Serial.print("\r\nLast Packet Send Status:\t");
   //Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
@@ -612,7 +627,8 @@ void rfd_PacketReceived(const uint8_t* buffer, size_t size)
   }
   else{
     myPacket.rfd_bad_packet++;
-    Serial.println("bad packet");
+    MyMenu.updateDisplay();
+    //Serial.println("bad packet");
   }
   
 }
@@ -637,6 +653,119 @@ void joystickControl(){
   }
 }
 
+
+class mavlink{
+  private:
+    uint8_t system_id = 1;        // MAVLink system ID. Leave at 0 unless you need a specific ID.
+    uint8_t component_id = 0;     // Should be left at 0. Set to 190 to simulate mission planner sending a command
+    uint8_t system_type = MAV_TYPE_FREE_BALLOON;      // UAV type. 0 = generic, 1 = fixed wing, 2 = quadcopter, 3 = helicopter
+    uint8_t autopilot_type = 0;   // Autopilot type. Usually set to 0 for generic autopilot with all capabilities
+    uint8_t system_mode = 64;     // Flight mode. 4 = auto mode, 8 = guided mode, 16 = stabilize mode, 64 = manual mode
+    uint32_t custom_mode = 0;     // Usually set to 0
+    uint8_t system_state = 4;     // 0 = unknown, 3 = standby, 4 = active
+    uint32_t upTime = 0;          // System uptime, usually set to 0 for cases where it doesn't matter
+
+
+    int16_t heading = 0;      // Geographical heading angle in degrees
+    float lat = myPacket.lat;   // GPS latitude in degrees (example: 47.123456)
+    float lon = myPacket.lng;   // GPS longitude in degrees
+    float alt = myPacket.alt;        // Relative flight altitude in m
+    float groundspeed = myPacket.speed; // Groundspeed in m/s
+    float airspeed = 0.0;    // Airspeed in m/s
+    float climbrate = 0.0;    // Climb rate in m/s, currently not working
+
+
+    // GPS parameters
+    int16_t gps_sats = myPacket.sats;    // Number of visible GPS satellites
+    int32_t gps_alt = 0.0;  // GPS altitude (Altitude above MSL)
+    float gps_hdop = 100.0;     // GPS HDOP
+    uint8_t fixType = 3;      // GPS fix type. 0-1: no fix, 2: 2D fix, 3: 3D fix
+
+
+    //mavlink packet creation
+    void command_parameters(int8_t system_id, uint8_t component_id) {
+
+      // Initialize the required buffers
+      mavlink_message_t msg;
+      uint8_t buf[MAVLINK_MAX_PACKET_LEN];
+
+      // Pack the message
+      mavlink_msg_param_value_pack(system_id, component_id, &msg, "RC_SPEED", 50, 1, 1, 0);
+      // Copy the message to the send buffer
+      uint16_t len = mavlink_msg_to_send_buffer(buf, &msg);
+
+      // Send the message
+      Serial.write(buf, len);
+    }
+
+    void command_globalgps(int8_t system_id, int8_t component_id, int32_t upTime, float lat, float lon, float alt, float gps_alt, uint16_t heading) {
+
+      int16_t velx = 0; //x speed
+      int16_t vely = 0; //y speed
+      int16_t velz = 0; //z speed
+
+
+      // Initialize the required buffers
+      mavlink_message_t msg;
+      uint8_t buf[MAVLINK_MAX_PACKET_LEN];
+
+      // Pack the message
+      mavlink_msg_global_position_int_pack(system_id, component_id, &msg, upTime, lat * 10000000.0, lon * 10000000.0, gps_alt * 1000.0, alt * 1000.0, velx, vely, velz, heading);
+
+      // Copy the message to the send buffer
+      uint16_t len = mavlink_msg_to_send_buffer(buf, &msg);
+      // Send the message (.write sends as bytes)
+      Serial.write(buf, len);
+    }
+
+    void command_gps(int8_t system_id, int8_t component_id, int32_t upTime, int8_t fixType, float lat, float lon, float alt, float gps_alt, int16_t heading, float groundspeed, float gps_hdop, int16_t gps_sats) {
+
+      // Initialize the required buffers
+      mavlink_message_t msg;
+      uint8_t buf[MAVLINK_MAX_PACKET_LEN];
+
+      // Pack the message
+      mavlink_msg_gps_raw_int_pack(system_id, component_id, &msg, upTime, fixType, lat * 10000000.0, lon * 10000000.0, alt * 1000.0, gps_hdop * 100.0, 65535, groundspeed, 65535, gps_sats, 0, 0, 0, 0, 0);
+
+      // Copy the message to the send buffer
+      uint16_t len = mavlink_msg_to_send_buffer(buf, &msg);
+
+      //Send globalgps command
+      command_globalgps(system_id, component_id, upTime, lat, lon, alt, gps_alt, heading);
+
+      // Send the message (.write sends as bytes)
+      Serial.write(buf, len);
+
+    }
+
+    void command_heartbeat(uint8_t system_id, uint8_t component_id, uint8_t system_type, uint8_t autopilot_type, uint8_t system_mode, uint32_t custom_mode, uint8_t system_state) {
+
+      // Initialize the required buffers
+      mavlink_message_t msg;
+      uint8_t buf[MAVLINK_MAX_PACKET_LEN];
+
+      // Pack the message
+      mavlink_msg_heartbeat_pack(system_id,component_id, &msg, system_type, autopilot_type, system_mode, custom_mode, system_state);
+
+      // Copy the message to the send buffer
+      uint16_t len = mavlink_msg_to_send_buffer(buf, &msg);
+
+      // Send the message
+      Serial.write(buf, len);
+    }
+
+  public:
+    
+    void Send(){
+      command_heartbeat(system_id, component_id, system_type, autopilot_type, system_mode, custom_mode, system_state);
+      command_parameters(system_id, component_id);
+      command_gps(system_id, component_id, upTime, fixType, lat, lon, alt, gps_alt, heading, groundspeed, gps_hdop, gps_sats);
+    }
+
+};
+mavlink myMavlink;
+
+
 void setup() {
 
   espNowSetup();
@@ -646,9 +775,7 @@ void setup() {
   rfd_PacketSerial.setStream(&rfd);
   rfd_PacketSerial.setPacketHandler(&rfd_PacketReceived);
 
-  myPacket.cutdown_status = false;
-  myPacket.cutdown_time = 3600;
-  myPacket.parachute_status = false;
+
 
 
   pinMode(GPIO_NUM_36, INPUT);
@@ -676,109 +803,6 @@ void setup() {
   espTX.RunTimer = false;
 }
 
-//mavlink packet creation
-void command_parameters(int8_t system_id, uint8_t component_id) {
-
-  // Initialize the required buffers
-  mavlink_message_t msg;
-  uint8_t buf[MAVLINK_MAX_PACKET_LEN];
-
-  // Pack the message
-  mavlink_msg_param_value_pack(system_id, component_id, &msg, "RC_SPEED", 50, 1, 1, 0);
-  // Copy the message to the send buffer
-  uint16_t len = mavlink_msg_to_send_buffer(buf, &msg);
-
-  // Send the message
-  Serial.write(buf, len);
-}
-
-void command_globalgps(int8_t system_id, int8_t component_id, int32_t upTime, float lat, float lon, float alt, float gps_alt, uint16_t heading) {
-
-  int16_t velx = 0; //x speed
-  int16_t vely = 0; //y speed
-  int16_t velz = 0; //z speed
-
-
-  // Initialize the required buffers
-  mavlink_message_t msg;
-  uint8_t buf[MAVLINK_MAX_PACKET_LEN];
-
-  // Pack the message
-  mavlink_msg_global_position_int_pack(system_id, component_id, &msg, upTime, lat * 10000000.0, lon * 10000000.0, gps_alt * 1000.0, alt * 1000.0, velx, vely, velz, heading);
-
-  // Copy the message to the send buffer
-  uint16_t len = mavlink_msg_to_send_buffer(buf, &msg);
-  // Send the message (.write sends as bytes)
-  Serial.write(buf, len);
-}
-
-void command_gps(int8_t system_id, int8_t component_id, int32_t upTime, int8_t fixType, float lat, float lon, float alt, float gps_alt, int16_t heading, float groundspeed, float gps_hdop, int16_t gps_sats) {
-
-  // Initialize the required buffers
-  mavlink_message_t msg;
-  uint8_t buf[MAVLINK_MAX_PACKET_LEN];
-
-  // Pack the message
-  mavlink_msg_gps_raw_int_pack(system_id, component_id, &msg, upTime, fixType, lat * 10000000.0, lon * 10000000.0, alt * 1000.0, gps_hdop * 100.0, 65535, groundspeed, 65535, gps_sats, 0, 0, 0, 0, 0);
-
-  // Copy the message to the send buffer
-  uint16_t len = mavlink_msg_to_send_buffer(buf, &msg);
-
-  //Send globalgps command
-  command_globalgps(system_id, component_id, upTime, lat, lon, alt, gps_alt, heading);
-
-  // Send the message (.write sends as bytes)
-  Serial.write(buf, len);
-
-}
-
-void command_heartbeat(uint8_t system_id, uint8_t component_id, uint8_t system_type, uint8_t autopilot_type, uint8_t system_mode, uint32_t custom_mode, uint8_t system_state) {
-
-  // Initialize the required buffers
-  mavlink_message_t msg;
-  uint8_t buf[MAVLINK_MAX_PACKET_LEN];
-
-  // Pack the message
-  mavlink_msg_heartbeat_pack(system_id,component_id, &msg, system_type, autopilot_type, system_mode, custom_mode, system_state);
-
-  // Copy the message to the send buffer
-  uint16_t len = mavlink_msg_to_send_buffer(buf, &msg);
-
-  // Send the message
-  Serial.write(buf, len);
-}
-
-void Send_Mavlink(){
-  uint8_t system_id = 1;        // MAVLink system ID. Leave at 0 unless you need a specific ID.
-  uint8_t component_id = 0;     // Should be left at 0. Set to 190 to simulate mission planner sending a command
-  uint8_t system_type = MAV_TYPE_FREE_BALLOON;      // UAV type. 0 = generic, 1 = fixed wing, 2 = quadcopter, 3 = helicopter
-  uint8_t autopilot_type = 0;   // Autopilot type. Usually set to 0 for generic autopilot with all capabilities
-  uint8_t system_mode = 64;     // Flight mode. 4 = auto mode, 8 = guided mode, 16 = stabilize mode, 64 = manual mode
-  uint32_t custom_mode = 0;     // Usually set to 0
-  uint8_t system_state = 4;     // 0 = unknown, 3 = standby, 4 = active
-  uint32_t upTime = 0;          // System uptime, usually set to 0 for cases where it doesn't matter
-
-
-  int16_t heading = 0;      // Geographical heading angle in degrees
-  float lat = myPacket.lat;   // GPS latitude in degrees (example: 47.123456)
-  float lon = myPacket.lng;   // GPS longitude in degrees
-  float alt = myPacket.alt;        // Relative flight altitude in m
-  float groundspeed = myPacket.speed; // Groundspeed in m/s
-  float airspeed = 0.0;    // Airspeed in m/s
-  float climbrate = 0.0;    // Climb rate in m/s, currently not working
-
-
-  // GPS parameters
-  int16_t gps_sats = myPacket.sats;    // Number of visible GPS satellites
-  int32_t gps_alt = 0.0;  // GPS altitude (Altitude above MSL)
-  float gps_hdop = 100.0;     // GPS HDOP
-  uint8_t fixType = 3;      // GPS fix type. 0-1: no fix, 2: 2D fix, 3: 3D fix
-
-  command_heartbeat(system_id, component_id, system_type, autopilot_type, system_mode, custom_mode, system_state);
-  command_parameters(system_id, component_id);
-  command_gps(system_id, component_id, upTime, fixType, lat, lon, alt, gps_alt, heading, groundspeed, gps_hdop, gps_sats);
-}
-
 void loop() {
   rfd_PacketSerial.update();
 
@@ -786,11 +810,17 @@ void loop() {
 
   updateButton();
 
+  if(RfdSendPacket == true){
+    Send_packet();
+    RfdSendPacket = false;
+  }
+
   //run at 10hz
   unsigned long currentMillis = millis();
   if(currentMillis - MillisCount1 >= 100){
     MillisCount1 = currentMillis;
     joystickControl();
+    
     
   }
 
@@ -798,7 +828,9 @@ void loop() {
   if(currentMillis - MillisCount2 >= 1000){
     MillisCount2 = currentMillis;
     espNowSend();
-    Send_Mavlink();
+    myMavlink.Send();
+
+    //Send_packet();
   }
     
 }
